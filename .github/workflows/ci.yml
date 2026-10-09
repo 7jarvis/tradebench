@@ -79,10 +79,14 @@ jobs:
     name: API tests (compose stack)
     needs: static
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write # test report check run
     env:
       BASE_URL: http://localhost:8080
       API_TOKEN: ci-${{ github.run_id }}
       KAFKA_BROKERS: localhost:19092
+      REQUIRE_EVENTS: "true" # in CI a missing Kafka must fail, not skip
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7

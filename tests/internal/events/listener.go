@@ -33,6 +33,9 @@ type Listener struct {
 func Listen(t *testing.T) *Listener {
 	t.Helper()
 	cfg := config.Get()
+	if len(cfg.KafkaBrokers) == 0 && cfg.RequireEvents {
+		t.Fatal("REQUIRE_EVENTS is set but KAFKA_BROKERS is empty")
+	}
 	if len(cfg.KafkaBrokers) == 0 {
 		t.Skip("KAFKA_BROKERS is not set; event assertions need the full stack (make up)")
 	}
