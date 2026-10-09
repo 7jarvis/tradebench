@@ -1,0 +1,6 @@
+{{ include "broker.fullname" . }} deployed.
+
+The pods read DATABASE_URL and API_TOKEN from Secret "{{ .Values.existingSecret }}".
+Port-forward to try it:
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "broker.fullname" . }} 8080:{{ .Values.service.port }}
+  curl -s localhost:8080/readyz

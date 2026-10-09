@@ -1,0 +1,74 @@
+replicaCount: 2
+
+image:
+  repository: ghcr.io/7jarvis/tradebench-broker
+  tag: ""            # defaults to .Chart.AppVersion
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+# Secrets are never rendered by this chart. Create the Secret out of band
+# (External Secrets, Sealed Secrets, CI) with keys DATABASE_URL and API_TOKEN.
+existingSecret: broker-secrets
+
+config:
+  kafkaBrokers: ""   # empty disables event publishing
+  kafkaTopic: trade-updates
+  logLevel: info
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}    # e.g. GKE Workload Identity binding
+
+service:
+  type: ClusterIP
+  port: 80
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  fsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  privileged: false
+  capabilities:
+    drop: ["ALL"]
+
+# Memory limit only: a CPU limit throttles Go's GC and request latency.
+resources:
+  requests:
+    cpu: 100m
+    memory: 64Mi
+  limits:
+    memory: 256Mi
+
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 6
+  targetCPUUtilizationPercentage: 70
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+networkPolicy:
+  enabled: false
+  # Namespaces allowed to call the API (matched by label).
+  allowedNamespaceLabels:
+    kubernetes.io/metadata.name: ingress-nginx
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

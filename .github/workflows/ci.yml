@@ -1,0 +1,129 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      load_test:
+        description: Run the k6 load test
+        type: boolean
+        default: false
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  static:
+    name: lint + unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: service/go.mod
+          cache-dependency-path: "**/go.sum"
+      - name: gofmt
+        run: test -z "$(gofmt -l service tests)" || (gofmt -l service tests; exit 1)
+      - name: go vet
+        run: |
+          (cd service && go vet ./...)
+          (cd tests && go vet ./...)
+      - name: unit tests (service) and framework self-tests
+        run: |
+          (cd service && go test -race ./...)
+          (cd tests && go test -race ./internal/...)
+
+  image:
+    name: build + scan image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: build
+        run: docker build -t tradebench/broker:${{ github.sha }} service
+      - name: scan (fail on fixable HIGH/CRITICAL)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: tradebench/broker:${{ github.sha }}
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
+  helm:
+    name: helm chart
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+      - name: lint
+        run: helm lint deploy/helm/broker --strict
+      - name: render with all optional resources enabled
+        run: |
+          helm template broker deploy/helm/broker \
+            --set autoscaling.enabled=true --set networkPolicy.enabled=true > /tmp/rendered.yaml
+          echo "rendered $(grep -c '^kind:' /tmp/rendered.yaml) objects"
+
+  api-tests:
+    name: API tests (compose stack)
+    needs: static
+    runs-on: ubuntu-latest
+    env:
+      BASE_URL: http://localhost:8080
+      API_TOKEN: ci-${{ github.run_id }}
+      KAFKA_BROKERS: localhost:19092
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: tests/go.mod
+          cache-dependency-path: "**/go.sum"
+      - name: start stack
+        run: docker compose up -d --build --wait
+      - name: install gotestsum
+        run: go install gotest.tools/gotestsum@v1.12.0
+      - name: run API tests
+        working-directory: tests
+        run: gotestsum --junitfile ../junit.xml --format testname -- -race -count=1 ./api/...
+      - name: service logs
+        if: failure()
+        run: docker compose logs --no-color > compose.log; tail -n 200 compose.log
+      - name: test report
+        if: always()
+        uses: mikepenz/action-junit-report@v5
+        with:
+          report_paths: junit.xml
+          include_passed: true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: api-test-results
+          path: |
+            junit.xml
+            compose.log
+          if-no-files-found: ignore
+      - name: stop stack
+        if: always()
+        run: docker compose down -v
+
+  load:
+    name: k6 load test
+    if: github.event_name == 'workflow_dispatch' && inputs.load_test
+    needs: api-tests
+    runs-on: ubuntu-latest
+    env:
+      BASE_URL: http://localhost:8080
+      API_TOKEN: ci-${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose up -d --build --wait
+      - uses: grafana/setup-k6-action@v1
+      - uses: grafana/run-k6-action@v1
+        with:
+          path: load/orders.js
+      - if: always()
+        run: docker compose down -v

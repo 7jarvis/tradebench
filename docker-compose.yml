@@ -1,0 +1,60 @@
+# Local / CI stack: the system under test and its dependencies.
+#   make up     -> docker compose up -d --build --wait
+#   make test   -> runs the Go test suite against it
+# Credentials below are for this throwaway sandbox only.
+name: tradebench
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: broker
+      POSTGRES_PASSWORD: broker
+      POSTGRES_DB: broker
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U broker -d broker"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    tmpfs:
+      - /var/lib/postgresql/data # fresh database on every start; faster in CI
+
+  redpanda:
+    image: redpandadata/redpanda:v24.2.7
+    command:
+      - redpanda
+      - start
+      - --mode=dev-container # single node, auto topic creation
+      - --smp=1
+      - --memory=512M
+      - --kafka-addr=internal://0.0.0.0:9092,external://0.0.0.0:19092
+      - --advertise-kafka-addr=internal://redpanda:9092,external://localhost:19092
+      - --default-log-level=warn
+    ports:
+      - "19092:19092" # tests on the host consume trade-updates here
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health | grep -E 'Healthy:.+true'"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  broker:
+    build: ./service
+    environment:
+      DATABASE_URL: postgres://broker:broker@postgres:5432/broker?sslmode=disable
+      API_TOKEN: ${API_TOKEN:-local-dev-token}
+      KAFKA_BROKERS: redpanda:9092
+      KAFKA_TOPIC: trade-updates
+      PPROF_ADDR: 0.0.0.0:6060
+      LOG_LEVEL: info
+    ports:
+      - "8080:8080"
+      - "127.0.0.1:6060:6060" # pprof: loopback only
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redpanda:
+        condition: service_healthy
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
