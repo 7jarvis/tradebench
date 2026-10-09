@@ -23,8 +23,8 @@ jobs:
     name: lint + unit tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version-file: service/go.mod
           cache-dependency-path: "**/go.sum"
@@ -43,11 +43,11 @@ jobs:
     name: build + scan image
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: build
         run: docker build -t tradebench/broker:${{ github.sha }} service
       - name: scan (fail on fixable HIGH/CRITICAL)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: tradebench/broker:${{ github.sha }}
           severity: HIGH,CRITICAL
@@ -58,8 +58,8 @@ jobs:
     name: helm chart
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: azure/setup-helm@v4
+      - uses: actions/checkout@v7
+      - uses: azure/setup-helm@v5
       - name: lint
         run: helm lint deploy/helm/broker --strict
       - name: render with all optional resources enabled
@@ -77,8 +77,8 @@ jobs:
       API_TOKEN: ci-${{ github.run_id }}
       KAFKA_BROKERS: localhost:19092
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version-file: tests/go.mod
           cache-dependency-path: "**/go.sum"
@@ -94,11 +94,11 @@ jobs:
         run: docker compose logs --no-color > compose.log; tail -n 200 compose.log
       - name: test report
         if: always()
-        uses: mikepenz/action-junit-report@v5
+        uses: mikepenz/action-junit-report@v6
         with:
           report_paths: junit.xml
           include_passed: true
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: api-test-results
@@ -119,7 +119,7 @@ jobs:
       BASE_URL: http://localhost:8080
       API_TOKEN: ci-${{ github.run_id }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: docker compose up -d --build --wait
       - uses: grafana/setup-k6-action@v1
       - uses: grafana/run-k6-action@v1
