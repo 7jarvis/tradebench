@@ -1,0 +1,12 @@
+# build / test output
+/service/broker
+*.test
+*.out
+junit.xml
+compose.log
+coverage.*
+
+# editors
+.idea/
+.vscode/
+.DS_Store
